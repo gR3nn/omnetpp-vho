@@ -1,6 +1,7 @@
 #include "ModularLink.h"
 #include <algorithm>
 #include <cmath>
+#include <numeric>
 
 using namespace omnetpp;
 
@@ -117,6 +118,14 @@ Offer ChunkDelay::offer() const
     return {par("peakRate").doubleValueInUnit("bps") * load * radio, par("price").doubleValue()};
 }
 
+double ChunkDelay::predictedThroughput() const
+{
+    if (throughputHistory.empty())
+        return 0;
+    return std::accumulate(throughputHistory.begin(), throughputHistory.end(), 0.0) /
+        throughputHistory.size();
+}
+
 void ChunkDelay::handleMessage(cMessage *message)
 {
     if (message->arrivedOn("loadIn") || message->arrivedOn("radioIn")) {
@@ -134,6 +143,12 @@ void ChunkDelay::handleMessage(cMessage *message)
             ++chunks;
             bitsSent += file->getChunkBits();
             file->setCredits(file->getCredits() + offer().pricePerMB * file->getChunkBits() / 8e6);
+            if (file->getChunkBits() == file->getRemainingBits()) {
+                double duration = (simTime() - file->getTransmissionStart()).dbl();
+                throughputHistory.push_back(file->getSizeBits() / duration);
+                if (throughputHistory.size() > 5)
+                    throughputHistory.pop_front();
+            }
             send(file, "out");
             return;
         }
@@ -165,6 +180,8 @@ void ChunkDelay::handleMessage(cMessage *message)
         scheduleAt(file->getDeadline(), file);
         return;
     }
+    if (file->getTransmissionStart() < SIMTIME_ZERO)
+        file->setTransmissionStart(simTime());
     file->setChunkBits(bits);
     busySince = simTime();
     scheduleAfter(duration, file);

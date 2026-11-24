@@ -10,6 +10,8 @@ message TransferFile extends Request
     double chunkBits;
     double credits;
     bool delivered;
+    bool declined;
+    simtime_t transmissionStart = -1;
     simtime_t readyAt;
 }
 
@@ -17,6 +19,7 @@ message SelectionQuery
 {
     double sizeBits;
     simtime_t deadline;
+    simtime_t fileArrival;
     int currentAccess = -1;
     int selectedAccess = -1;
 }

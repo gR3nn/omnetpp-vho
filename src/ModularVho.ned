@@ -17,6 +17,8 @@ simple HandoverAlgorithm
     parameters:
         string policy = default("fastest");
         double valuePerMB = default(0.9);
+        double idealTime @unit(s);
+        double deadlineValueFraction;
         double surplusMargin = default(0.01);
         @display("i=block/control");
     gates:
@@ -27,6 +29,8 @@ simple FileDestination
 {
     parameters:
         double valuePerMB = default(0.9);
+        double idealTime @unit(s);
+        double deadlineValueFraction;
         @display("i=block/sink");
     gates:
         input in[];
@@ -145,6 +149,8 @@ network ModularVerticalHandover
         double initialPosition @unit(m) = default(0m);
         double routeLength @unit(m) = default(600m);
         double valuePerMB = default(0.9);
+        double idealTime @unit(s) = default(2s);
+        double deadlineValueFraction = default(0.25);
         @display("bgb=650,365");
     submodules:
         gen: Traffic {
@@ -154,6 +160,8 @@ network ModularVerticalHandover
         svr: FileServer { @display("p=230,155"); }
         alg: HandoverAlgorithm {
             valuePerMB = parent.valuePerMB;
+            idealTime = parent.idealTime;
+            deadlineValueFraction = parent.deadlineValueFraction;
             @display("p=230,280");
         }
         network1: AccessNetwork {
@@ -176,6 +184,8 @@ network ModularVerticalHandover
         }
         dest: FileDestination {
             valuePerMB = parent.valuePerMB;
+            idealTime = parent.idealTime;
+            deadlineValueFraction = parent.deadlineValueFraction;
             @display("p=565,155");
         }
     connections:

@@ -5,6 +5,20 @@
 
 using namespace omnetpp;
 
+namespace {
+constexpr int NoCoverage = -1;
+constexpr int NoFeasibleNetwork = -2;
+
+double delayUtility(double delay, double idealTime, double deadline, double deadlineValue)
+{
+    if (delay > deadline)
+        return 0;
+    if (delay <= idealTime)
+        return 1;
+    return deadlineValue + (1 - deadlineValue) * (deadline - delay) / (deadline - idealTime);
+}
+}
+
 class FileServer : public cSimpleModule {
     cQueue queue{"queued files"};
     TransferFile *selecting = nullptr;
@@ -38,6 +52,7 @@ class FileServer : public cSimpleModule {
         auto *query = new SelectionQuery("choose network");
         query->setSizeBits(selecting->getSizeBits());
         query->setDeadline(selecting->getDeadline());
+        query->setFileArrival(selecting->getCreationTime());
         query->setCurrentAccess(current);
         send(query, "selection$o");
     }
@@ -58,7 +73,14 @@ class FileServer : public cSimpleModule {
             auto *query = check_and_cast<SelectionQuery *>(message);
             int selected = query->getSelectedAccess();
             delete query;
-            if (selected < 0) {
+            if (selected == NoFeasibleNetwork) {
+                selecting->setDeclined(true);
+                awaitingAck = true;
+                send(selecting, "expiredOut");
+                selecting = nullptr;
+                return;
+            }
+            if (selected == NoCoverage) {
                 scheduleAt(std::min(selecting->getDeadline(),
                     simTime() + par("scanInterval").doubleValueInUnit("s")), retry);
                 if (queue.isEmpty())
@@ -103,7 +125,9 @@ class FileServer : public cSimpleModule {
 
 class HandoverAlgorithm : public cSimpleModule {
     std::array<ChunkDelay *, 2> links{};
-    Policy policy;
+    Policy policy = Policy::Fastest;
+    bool ormond = false;
+    std::array<int, 2> staleDecisions{};
 
     void initialize() override
     {
@@ -118,17 +142,60 @@ class HandoverAlgorithm : public cSimpleModule {
             policy = Policy::Cheapest;
         else if (name == "surplus")
             policy = Policy::Surplus;
+        else if (name == "ormond")
+            ormond = true;
         else
             throw cRuntimeError("Unknown selection policy: %s", name.c_str());
-        if (par("valuePerMB").doubleValue() < 0 || par("surplusMargin").doubleValue() < 0)
+        if (par("valuePerMB").doubleValue() < 0 || par("surplusMargin").doubleValue() < 0 ||
+            par("idealTime").doubleValue() < 0 || par("deadlineValueFraction").doubleValue() < 0 ||
+            par("deadlineValueFraction").doubleValue() > 1)
             throw cRuntimeError("Invalid value or surplus margin");
+    }
+
+    int selectOrmond(const SelectionQuery& query, double handoverSeconds)
+    {
+        double deadline = (query.getDeadline() - query.getFileArrival()).dbl();
+        double age = (simTime() - query.getFileArrival()).dbl();
+        double ideal = par("idealTime").doubleValueInUnit("s");
+        double bits = query.getSizeBits();
+        double valuePerMB = par("valuePerMB").doubleValue();
+        double deadlineValue = par("deadlineValueFraction").doubleValue();
+        int best = NoFeasibleNetwork;
+        double bestScore = 0;
+        for (int i = 0; i < static_cast<int>(links.size()); ++i) {
+            auto offer = links[i]->offer();
+            if (offer.bitsPerSecond <= 0)
+                continue;
+            double setup = query.getCurrentAccess() >= 0 && i != query.getCurrentAccess()
+                ? handoverSeconds : 0;
+            double remaining = deadline - age - setup;
+            if (remaining <= 0)
+                continue;
+            double predicted = links[i]->predictedThroughput();
+            if (predicted > 0 && bits / predicted > remaining) {
+                if (++staleDecisions[i] <= 6)
+                    continue;
+                links[i]->resetPrediction();
+                predicted = 0;
+            }
+            staleDecisions[i] = 0;
+            double eta = predicted > 0 ? std::min(deadline, age + setup + bits / predicted) : deadline;
+            double score = bits / 8e6 * (valuePerMB * delayUtility(eta, ideal, deadline, deadlineValue) -
+                offer.pricePerMB);
+            if (best < 0 || score > bestScore || (score == bestScore && i == query.getCurrentAccess())) {
+                best = i;
+                bestScore = score;
+            }
+        }
+        return best;
     }
 
     void handleMessage(cMessage *message) override
     {
         auto *query = check_and_cast<SelectionQuery *>(message);
         double setup = getParentModule()->getSubmodule("svr")->par("handoverDelay").doubleValueInUnit("s");
-        query->setSelectedAccess(selectAccess({links[0]->offer(), links[1]->offer()}, policy,
+        query->setSelectedAccess(ormond ? selectOrmond(*query, setup) :
+            selectAccess({links[0]->offer(), links[1]->offer()}, policy,
             query->getCurrentAccess(), query->getSizeBits(), (query->getDeadline() - simTime()).dbl(),
             setup, par("valuePerMB").doubleValue(), par("surplusMargin").doubleValue()));
         query->setName("selected network");
@@ -139,6 +206,7 @@ class HandoverAlgorithm : public cSimpleModule {
 class FileDestination : public cSimpleModule {
     long completed = 0;
     long expired = 0;
+    long declined = 0;
     double completionSeconds = 0;
     double realizedValue = 0;
     double credits = 0;
@@ -160,8 +228,11 @@ class FileDestination : public cSimpleModule {
             double budget = (file->getDeadline() - file->getCreationTime()).dbl();
             completionSeconds += delay;
             deliveredBytes += file->getSizeBits() / 8;
-            realizedValue += file->getSizeBits() / 8e6 * par("valuePerMB").doubleValue() *
-                             std::max(0.0, 1 - delay / budget);
+            double utility = delayUtility(delay, par("idealTime").doubleValueInUnit("s"), budget,
+                par("deadlineValueFraction").doubleValue());
+            realizedValue += file->getSizeBits() / 8e6 * par("valuePerMB").doubleValue() * utility;
+        } else if (file->getDeclined()) {
+            ++declined;
         } else {
             ++expired;
         }
@@ -173,6 +244,7 @@ class FileDestination : public cSimpleModule {
     {
         recordScalar("completed", completed);
         recordScalar("expired", expired);
+        recordScalar("declined", declined);
         recordScalar("completionSeconds", completionSeconds);
         if (completed > 0)
             recordScalar("meanCompletionSeconds", completionSeconds / completed);

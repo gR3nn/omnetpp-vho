@@ -13,6 +13,7 @@ simple Access
 simple Traffic
 {
     parameters:
+        bool modular = default(false);
         int files = default(20);
         double interval @unit(s) = default(5s);
         double fileSize @unit(MB) = default(4MB);

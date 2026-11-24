@@ -1,12 +1,12 @@
 # Vertical handover in OMNeT++
 
-**AI-assisted reference implementation for a Computer Aided Design project.** Use it to study the model, reproduce the experiments, and check your own design. The student is responsible for independent contributions, AI disclosure, and the final submission.
+A discrete-event simulation of vertical handover for a Computer Aided Design project.
 
 The model moves one terminal through overlapping cellular and Wi-Fi coverage while it downloads non-real-time files with deadlines. It compares choosing the fastest access, choosing the cheapest access, and choosing by estimated consumer surplus.
 
 ## Build and run
 
-Verified on Linux with **OMNeT++ 6.5.0**, build `261029-ccd51e11a4`. The simulator uses core OMNeT++ with C++, NED, and a generated message. The experiment runner needs Python 3 and its standard library. Qtenv needs the OMNeT++ GUI build and a display.
+Verified on Linux with **OMNeT++ 6.5.0**, build `261029-ccd51e11a4`. The simulator uses core OMNeT++ with C++, NED, and a generated message. Qtenv needs the OMNeT++ GUI build and a display.
 
 From the repository root, with the simulator installed at your chosen path:
 
@@ -15,11 +15,23 @@ source /path/to/omnetpp-6.5.0/setenv
 make -j4
 make smoke
 make demo
-python3 scripts/run.py
-python3 scripts/run.py --output results/experiment
 ```
 
-In Qtenv, run the Demo configuration with **F5** to animate the terminal and show its selected access. **F7** runs in express mode. Inspect the terminal's position, selected access, handover count, and completed count. Cmdenv writes scalars under `results/`. The experiment runner uses a fresh temporary directory for each configuration, then writes the three CSVs to the chosen output directory.
+In Qtenv, run the Demo configuration with **F5** to animate the terminal and show its selected access. **F7** runs in express mode. Inspect the terminal's position, selected access, handover count, and completed count.
+
+## Run checks and export experiment data
+
+The following commands use Cmdenv and the OMNeT++ result exporter:
+
+```sh
+./src/vho -u Cmdenv -n src -c AccountingCheck
+./src/vho -u Cmdenv -n src -c HandoverCheck
+./src/vho -u Cmdenv -n src -c PolicyCheck
+./src/vho -u Cmdenv -n src -c Experiment --result-dir=results/native-sweep
+opp_scavetool export -T s -F CSV-S -o results/native-sweep.csv results/native-sweep/*.sca
+```
+
+The three check configurations produce 10 scalar files under `results/`. The full experiment produces 720 scalar files under `results/native-sweep/`. The export contains the raw per-run scalar measurements. See the results report for metric definitions and how to reproduce the aggregate tables.
 
 ## Model
 
@@ -40,11 +52,11 @@ Ormond, Perry, and Murphy describe user-centric access selection for non-real-ti
 
 See [the results report](evidence/README.md), [per-run data](evidence/runs.csv), [scenario means and intervals](evidence/summary.csv), and [paired comparisons](evidence/paired-vs-fastest.csv). All 10 deterministic simulations and 720 experiment simulations ran on the pinned version.
 
-## AI assistance and independent work
+## Develop and verify
 
-Codex generated the reference model, scenario configuration, build and experiment scripts, documentation, experiment outputs, and repository commits. The PR and commit history record the generated implementation.
+Start a feature branch from `develop`. Edit `omnetpp.ini` for workload and scenario settings, `src/Vho.ned` for topology and parameters, or the corresponding C++ module for model behavior. Rebuild with `make -j4` after changing C++ or message definitions. Run the relevant check in Cmdenv, then use Qtenv to inspect changes in the simulation.
 
 1. Reimplement access sampling from the rate equation in your own code. With variation disabled, check the center, boundary, and a point just outside coverage by hand. At the cellular center expect 3 Mbps, and at its boundary expect 1.2 Mbps.
 2. Derive your own selection module from a cited source or explicitly stated design. Compare policies at 300 m using a 1 MB file, rates of 3 and 12 Mbps, and prices of 0.18 and 0.26 credits/MB. The transfer times without setup are 8/3 s and 2/3 s. Compare your decisions at 1 s and 30 s with `PolicyCheck`.
 3. Implement and independently verify handover interruption. Use a coverage transition with one file in progress, then compare 0 and 0.35 s setup. Check byte conservation, charges on both accesses, and that transfer resumes only after setup. Compare with `HandoverCheck`.
-4. Choose a research question for your own extension, change one factor at a time, and explain the observed differences using the recorded rates, deadlines, and switches. Record which parts you wrote or reimplemented and which parts used AI assistance.
+4. Choose a research question for your own extension, change one factor at a time, and explain the observed differences using the recorded rates, deadlines, and switches.

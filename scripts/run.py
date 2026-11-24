@@ -12,7 +12,7 @@ from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 METRICS = ("completionRate", "credits", "meanCompletionSeconds", "handovers",
-           "handoverInterruptionSeconds", "deliveredMbps")
+           "handoverInterruptionSeconds", "deliveredMbps", "realizedSurplus")
 
 
 def run(config):
@@ -36,6 +36,7 @@ def read_run(path):
             run[key] = float(value)
     assert run["submitted"] == run["completed"] + run["expired"] + run["pending"], run
     assert run["completedBytes"] <= run["transferredBytes"] + 1e-6, run
+    assert isclose(run["realizedSurplus"], run["realizedValue"] - run["credits"], abs_tol=1e-12), run
     return run
 
 
@@ -66,6 +67,8 @@ def check():
         assert row["completed"] == int(completes) and row["handovers"] == 0, row
         assert isclose(row["credits"], charge), row
         assert isclose(row["completionSeconds"], duration if completes else 0), row
+        value = .9 * max(0, 1 - duration / float(row["deadline"][:-1]))
+        assert isclose(row["realizedSurplus"], value - charge), row
     print("10 deterministic simulations passed")
 
 
@@ -105,7 +108,7 @@ def experiment(output):
             stats = interval(values) if len(values) == 20 else {
                 "mean": mean(values) if values else "", "ci95HalfWidth": ""}
             summary.append(dict(case, metric=metric, n=len(values), **stats))
-            if policy != "fastest" and metric in ("completionRate", "credits", "handovers"):
+            if policy != "fastest" and metric in ("completionRate", "credits", "handovers", "realizedSurplus"):
                 differences = [row[metric] - baseline[seed][metric] for seed, row in seeds.items()]
                 paired.append(dict(case, metric=metric, n=20, **interval(differences)))
     output.mkdir(parents=True, exist_ok=True)

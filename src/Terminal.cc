@@ -29,6 +29,7 @@ class Terminal : public cSimpleModule {
     double interruptedSeconds = 0;
     double completedBytes = 0;
     double completionSeconds = 0;
+    double realizedValue = 0;
     double transferredBytes = 0;
     double position = 0;
     long submitted = 0;
@@ -120,7 +121,11 @@ class Terminal : public cSimpleModule {
         if (file.remainingBits <= 0) {
             ++completed;
             completedBytes += file.totalBits / 8;
-            completionSeconds += (std::max(start, readyAt) - file.arrival).dbl() + bits / rate;
+            double latency = (std::max(start, readyAt) - file.arrival).dbl() + bits / rate;
+            completionSeconds += latency;
+            double budget = (file.deadline - file.arrival).dbl();
+            realizedValue += file.totalBits / 8e6 * par("valuePerMB").doubleValue() *
+                             std::max(0.0, 1 - latency / budget);
             files.pop_front();
         }
     }
@@ -144,6 +149,8 @@ class Terminal : public cSimpleModule {
         recordScalar("transferredBytes", transferredBytes);
         recordScalar("completedBytes", completedBytes);
         recordScalar("completionSeconds", completionSeconds);
+        recordScalar("realizedValue", realizedValue);
+        recordScalar("realizedSurplus", realizedValue - credits);
     }
 
   public:

@@ -1,0 +1,8 @@
+/src/Makefile
+/src/vho
+/src/vho_dbg
+/src/*_m.cc
+/src/*_m.h
+/src/out/
+/results/
+__pycache__/

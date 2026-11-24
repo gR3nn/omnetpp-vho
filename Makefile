@@ -1,11 +1,11 @@
-.PHONY: all clean demo smoke
-all: src/Makefile
+.PHONY: all clean demo smoke makefiles
+all: makefiles
 	$(MAKE) -C src MODE=release
 
-src/Makefile:
+makefiles:
 	cd src && opp_makemake -f -o vho
 
-clean:
+clean: makefiles
 	$(MAKE) -C src MODE=release clean
 
 demo: all

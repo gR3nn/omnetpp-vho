@@ -28,6 +28,11 @@ simple Terminal
         double tick @unit(s) = default(0.1s);
         double speed @unit(mps) = default(12mps);
         double routeLength @unit(m) = default(600m);
+        double initialPosition @unit(m) = default(0m);
+        string policy = default("fastest");
+        double handoverDelay @unit(s) = default(0.3s);
+        double valuePerMB = default(0.9);
+        double surplusMargin = default(0.01);
         @display("i=device/laptop");
     gates:
         input in;

@@ -6,3 +6,5 @@
 /src/out/
 /results/
 __pycache__/
+
+.qtenvrc

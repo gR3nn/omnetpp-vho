@@ -20,7 +20,8 @@ class Traffic : public cSimpleModule {
 
     void handleMessage(cMessage *) override
     {
-        auto *request = new Request("file request");
+        Request *request = par("modular").boolValue()
+            ? new TransferFile("file") : new Request("file request");
         request->setSizeBits(par("fileSize").doubleValueInUnit("B") * 8);
         request->setDeadline(simTime() + par("deadline").doubleValueInUnit("s"));
         send(request, "out");
